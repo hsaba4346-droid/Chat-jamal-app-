@@ -600,6 +600,194 @@ db.ref("messages").limitToLast(100).on("child_added", snap => {
             </div>
         `;
         
+        // تشغيل الصوت للرسائل الجديدة فقط
+        if (messagesLoaded && !isMe && msg.time > Date.now() - 3000) {
+            playNotificationSound();
+            showNotification(`💬 رسالة جديدة من ${msg.name}`);
+            
+            // اهتزاز للإشعار
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
+            }
+        }
+    }
+    
+    document.getElementById("messages").appendChild(div);
+    scrollToBottom();
+    
+    // بعد التحميل الأول
+    setTimeout(() => {
+        messagesLoaded = true;
+    }, 1000);
+});
+
+// ===============================
+// مؤشر الكتابة
+// ===============================
+function handleTyping() {
+    const input = document.getElementById("messageInput").value;
+    
+    if (input.length > 0) {
+        db.ref('typing/' + user).set(true);
+        
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+            db.ref('typing/' + user).remove();
+        }, 2000);
+    } else {
+        db.ref('typing/' + user).remove();
+    }
+}
+
+db.ref('typing').on('value', snap => {
+    const typing = snap.val();
+    const indicator = document.getElementById('typingIndicator');
+    
+    if (typing) {
+        const names = Object.keys(typing).filter(name => name !== user);
+        if (names.length > 0) {
+            indicator.style.display = 'block';
+            document.getElementById('typingText').textContent = 
+                names.length === 1 
+                ? `${names[0]} يكتب...` 
+                : `${names.length} أشخاص يكتبون...`;
+        } else {
+            indicator.style.display = 'none';
+        }
+    } else {
+        indicator.style.display = 'none';
+    }
+});
+
+// ===============================
+// الرموز التعبيرية
+// ===============================
+function loadEmojis() {
+    const picker = document.getElementById('emojiPicker');
+    emojis.forEach(emoji => {
+        const span = document.createElement('span');
+        span.className = 'emoji';
+        span.textContent = emoji;
+        span.onclick = () => insertEmoji(emoji);
+        picker.appendChild(span);
+    });
+}
+
+function toggleEmoji() {
+    const picker = document.getElementById('emojiPicker');
+    picker.style.display = picker.style.display === 'flex' ? 'none' : 'flex';
+}
+
+function insertEmoji(emoji) {
+    const input = document.getElementById('messageInput');
+    input.value += emoji;
+    input.focus();
+    toggleEmoji();
+}
+
+// ===============================
+// الإشعارات والأصوات
+// ===============================
+function requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === "default") {
+        Notification.requestPermission();
+    }
+}
+
+function showNotification(message) {
+    const notif = document.createElement('div');
+    notif.className = 'notification';
+    notif.innerHTML = message;
+    document.body.appendChild(notif);
+    
+    setTimeout(() => {
+        notif.remove();
+    }, 3000);
+    
+    // إشعار المتصفح
+    if ('Notification' in window && Notification.permission === "granted") {
+        new Notification("💬 دردشة جديدة", {
+            body: message.replace(/<[^>]*>/g, ''),
+            icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23128C7E'/><text y='70' x='50' text-anchor='middle' font-size='60'>💬</text></svg>",
+            badge: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='90' x='50' text-anchor='middle' font-size='90'>💬</text></svg>",
+            vibrate: [200, 100, 200],
+            tag: 'chat-notification'
+        });
+    }
+}
+
+function playNotificationSound() {
+    const sound = document.getElementById('notificationSound');
+    sound.play().catch(e => console.log('Sound blocked:', e));
+}
+
+// ===============================
+// وظائف إضافية
+// ===============================
+function logout() {
+    if (confirm("هل تريد الخروج من الدردشة؟")) {
+        db.ref("messages").push({
+            type: 'system',
+            text: `${user} غادر الدردشة 👋`,
+            time: Date.now()
+        });
+        
+        if (onlineRef) onlineRef.remove();
+        db.ref('typing/' + user).remove();
+        location.reload();
+    }
+}
+
+function scrollToBottom() {
+    const messages = document.getElementById("messages");
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// إرسال بالضغط على Enter
+document.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && document.getElementById('chat').style.display === 'block') {
+        sendMessage();
+    }
+});
+
+// إخفاء الرموز عند الضغط خارجها
+document.addEventListener('click', (e) => {
+    const picker = document.getElementById('emojiPicker');
+    const btn = document.getElementById('emojiBtn');
+    if (!picker.contains(e.target) && e.target !== btn) {
+        picker.style.display = 'none';
+    }
+});
+
+// منع التكبير على iOS
+document.addEventListener('gesturestart', function(e) {
+    e.preventDefault();
+});
+
+// حفظ اسم المستخدم
+window.addEventListener('beforeunload', () => {
+    if (user && onlineRef) {
+        onlineRef.remove();
+    }
+});
+</script>
+
+</body>
+</html>isMe ? `<div class="msg-header">
+                    <span class="name" style="color: ${msg.color || '#25D366'}">${msg.name}</span>
+                    <span class="time">${time}</span>
+                </div>` : ''}
+                <div class="msg-text">${escapeHtml(msg.text)}</div>
+                ${isMe ? `<div class="time" style="text-align: left; margin-top: 5px;">${time}</div>` : ''}
+            </div>
+        `;
+        
         // تشغيل الصوت للرسائل الجديدة فقط (ليست من المستخدم الحالي)
         if (messagesLoaded && !isMe && msg.time > Date.now() - 3000) {
             playNotificationSound();
